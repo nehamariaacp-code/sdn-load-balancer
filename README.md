@@ -58,15 +58,101 @@ These results describe the recorded test runs and may vary with system load and 
 
 ## Running the Project
 
-Run the experiments from the Ubuntu environment configured with POX, Mininet, and Open vSwitch.
+### Prerequisites
 
-1. Start the Mininet topology using `topo.py`.
-2. Start the appropriate POX controller module.
-3. Start the backend TCP servers.
-4. Run `benchmark.py` to generate requests and collect response-time measurements.
-5. Use `plot_metrics.py` to generate performance visualizations.
+Use Ubuntu with Python 3, POX, Mininet, Open vSwitch, Matplotlib, and NumPy installed.
 
-Exact commands may depend on the local POX and Mininet configuration.
+Clone the repository:
+
+```bash
+git clone https://github.com/nehamariaacp-code/sdn-load-balancer.git
+cd sdn-load-balancer
+```
+### 1. Start the POX Controller
+Copy the controller module into POX's `ext` directory.
+
+For the adaptive load balancer:
+
+```bash
+cp ~/sdn_load_balancer/adaptive_lb.py ~/pox/ext/adaptive_lb.py
+cd ~/pox
+./pox.py openflow.of_01 --port=6633 adaptive_lb
+```
+
+Run only one controller at a time on port 6633.
+
+For the Round Robin baseline, use this controller instead:
+
+```bash
+cp ~/sdn_load_balancer/lb_controller.py ~/pox/ext/lb_controller.py
+cd ~/pox
+./pox.py openflow.of_01 --port=6633 lb_controller
+```
+
+### 2. Start the Mininet Topology
+
+Open a separate Ubuntu terminal and run:
+
+```bash
+sudo python3 ~/sdn_load_balancer/topo.py
+```
+
+The topology uses clients `h1` and `h2`, backend servers `h3`, `h4`, and `h5`, and virtual IP `10.0.0.100`.
+
+### 3. Start the Backend Servers
+
+From the Mininet CLI, open terminals for the three backend hosts:
+
+```text
+xterm h3 h4 h5
+```
+
+Run one command in each host terminal.
+
+On `h3`:
+
+```bash
+python3 /home/neha/sdn_load_balancer/server.py 10.0.0.3 8000 Server-3 0.40
+```
+
+On `h4`:
+
+```bash
+python3 /home/neha/sdn_load_balancer/server.py 10.0.0.4 8000 Server-4 0.08
+```
+
+On `h5`:
+
+```bash
+python3 /home/neha/sdn_load_balancer/server.py 10.0.0.5 8000 Server-5 0.01
+```
+
+These delays simulate different backend processing times.
+
+### 4. Run a Benchmark
+
+From the Mininet CLI, run:
+
+```text
+h1 python3 /home/neha/sdn_load_balancer/benchmark.py 30 5 /home/neha/sdn_load_balancer/adaptive_results.csv
+```
+
+This runs 30 requests with a concurrency level of 5 and saves the results to `adaptive_results.csv`.
+
+Run the same benchmark separately with the Round Robin controller, saving its results to `rr_results.csv`.
+
+### 5. Generate the Performance Graph
+
+From an Ubuntu terminal, run:
+
+```bash
+cd ~/sdn_load_balancer
+python3 plot_metrics.py rr_results.csv adaptive_results.csv
+```
+
+The comparison graph is saved as `d2_performance_comparison.png`.
+
+
 
 ## Conclusion
 
