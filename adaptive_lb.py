@@ -3,7 +3,8 @@ import pox.openflow.libopenflow_01 as of
 from pox.lib.addresses import IPAddr, EthAddr
 import threading
 import time
-
+from pox.lib.recoco import Timer
+import json
 log = core.getLogger()
 
 class AdaptiveLeastConnectionsLB(object):
@@ -23,6 +24,9 @@ class AdaptiveLeastConnectionsLB(object):
             IPAddr("10.0.0.4"): 0,
             IPAddr("10.0.0.5"): 0
         }
+        self.port_bytes_previous = {}
+        self.port_rates_mbps = {}
+        self.stats_connection = None
 
     def _handle_ConnectionUp(self, event):
         log.info("Switch s1 connected. Installing baseline rules...")
@@ -48,16 +52,91 @@ class AdaptiveLeastConnectionsLB(object):
         msg_lb.match.nw_dst = IPAddr(self.VIP)
         msg_lb.actions.append(of.ofp_action_output(port=of.OFPP_CONTROLLER))
         event.connection.send(msg_lb)
+        self.stats_connection = event.connection
+        Timer(5, self._request_port_stats, recurring=True)
+    def _request_port_stats(self):
+        if self.stats_connection is None:
+            return
 
+        msg = of.ofp_stats_request()
+        msg.body = of.ofp_port_stats_request()
+        self.stats_connection.send(msg)
+
+    def _handle_PortStatsReceived(self, event):
+        now = time.time()
+
+        for stat in event.stats:
+            if stat.port_no not in (3, 4, 5):
+                continue
+
+            total_bytes = stat.rx_bytes + stat.tx_bytes
+            previous = self.port_bytes_previous.get(stat.port_no)
+
+            if previous is not None:
+                old_bytes, old_time = previous
+                elapsed = now - old_time
+
+                if elapsed > 0:
+                    rate = max(0, total_bytes - old_bytes) * 8 / elapsed / 1_000_000
+                    self.port_rates_mbps[stat.port_no] = rate
+                    log.info(
+                        "Network load - port %s: %.4f Mbps",
+                        stat.port_no, rate
+                    )
+
+            self.port_bytes_previous[stat.port_no] = (total_bytes, now)
     def _release_connection(self, server_ip, duration):
         time.sleep(duration)
         if self.active_conns[server_ip] > 0:
             self.active_conns[server_ip] -= 1
 
     def _select_least_loaded_server(self):
-        # Pick server with smallest active connection count; prioritize faster servers on tie
-        server_order = [self.servers[2], self.servers[1], self.servers[0]] # 5, 4, 3
-        return min(server_order, key=lambda s: self.active_conns[IPAddr(s['ip'])])
+        status_file = "/home/neha/sdn_load_balancer/server_status.json"
+
+        try:
+            with open(status_file, "r") as file:
+                health = json.load(file)
+        except (OSError, ValueError):
+            log.warning("Health status unavailable; using all servers")
+            health = {s["ip"]: True for s in self.servers}
+
+        healthy_servers = [
+            s for s in self.servers
+            if health.get(s["ip"], False)
+        ]
+        OVERLOAD_THRESHOLD = 2
+
+        available_servers = [
+            s for s in healthy_servers
+            if self.active_conns[IPAddr(s["ip"])] < OVERLOAD_THRESHOLD
+        ]
+
+        overloaded_servers = [
+            s for s in healthy_servers
+            if self.active_conns[IPAddr(s["ip"])] >= OVERLOAD_THRESHOLD
+        ]
+
+        for s in overloaded_servers:
+            log.warning(
+                "Server %s is OVERLOADED: estimated active connections = %s",
+                s["ip"], self.active_conns[IPAddr(s["ip"])]
+            )
+
+        if available_servers:
+            healthy_servers = available_servers
+
+        if not healthy_servers:
+            log.error("No healthy backend servers available!")
+            return None
+
+        return min(
+            healthy_servers,
+            key=lambda s: (
+                self.active_conns[IPAddr(s["ip"])],
+                self.port_rates_mbps.get(s["port"], 0.0)
+            )
+
+        )
 
     def _handle_PacketIn(self, event):
         packet = event.parsed
@@ -69,6 +148,10 @@ class AdaptiveLeastConnectionsLB(object):
 
         if ip_pkt and tcp_pkt and str(ip_pkt.dstip) == self.VIP:
             server = self._select_least_loaded_server()
+            if server is None:
+                log.error("Request dropped: no healthy servers available")
+                return
+            log.info("VIP request: selecting server %s", server['ip'])
             server_ip = IPAddr(server['ip'])
 
             self.active_conns[server_ip] += 1
@@ -83,7 +166,7 @@ class AdaptiveLeastConnectionsLB(object):
             # Reverse Rule (Server -> Client)
             rule_rev = of.ofp_flow_mod()
             rule_rev.priority = 100
-            rule_rev.idle_timeout = 1
+            rule_rev.idle_timeout = 30
             rule_rev.match.dl_type = 0x0800
             rule_rev.match.nw_proto = 6
             rule_rev.match.nw_src = server_ip
@@ -99,7 +182,7 @@ class AdaptiveLeastConnectionsLB(object):
             # Forward Rule (Client -> Server)
             rule_fwd = of.ofp_flow_mod()
             rule_fwd.priority = 100
-            rule_fwd.idle_timeout = 1
+            rule_fwd.idle_timeout = 30
             rule_fwd.match.dl_type = 0x0800
             rule_fwd.match.nw_proto = 6
             rule_fwd.match.nw_src = ip_pkt.srcip
@@ -110,6 +193,7 @@ class AdaptiveLeastConnectionsLB(object):
             rule_fwd.actions.append(of.ofp_action_nw_addr.set_dst(server_ip))
             rule_fwd.actions.append(of.ofp_action_output(port=server['port']))
             event.connection.send(rule_fwd)
+            log.info("Installed forward and reverse rules for server %s", server['ip'])
 
             pkt_out = of.ofp_packet_out()
             if event.ofp.buffer_id != of.NO_BUFFER:
