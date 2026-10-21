@@ -157,3 +157,11 @@ The comparison graph is saved as `d2_performance_comparison.png`.
 ## Conclusion
 
 The experiments demonstrate that adaptive server selection can improve response time under the tested synthetic server-delay conditions while maintaining successful request handling during the recorded failure test.
+## Authors
+
+This project was developed as a group project by:
+
+- **Neha Maria Augustine**  PES1UG25CS332
+- **[Om Swaroop]**
+- **[Nishanth Basu]**
+
