@@ -91,7 +91,7 @@ class AdaptiveLeastConnectionsLB(object):
             self.active_conns[server_ip] -= 1
 
     def _select_least_loaded_server(self):
-        status_file = "/home/neha/sdn_load_balancer/server_status.json"
+        status_file = "/tmp/server_status.json"
 
         try:
             with open(status_file, "r") as file:

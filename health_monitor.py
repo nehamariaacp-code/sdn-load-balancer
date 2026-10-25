@@ -10,7 +10,7 @@ SERVERS = {
     "10.0.0.5": 8000,
 }
 
-STATUS_FILE = "/home/neha/sdn_load_balancer/server_status.json"
+STATUS_FILE = "/tmp/server_status.json"
 CHECK_INTERVAL = 3
 
 def check_server(ip, port):
