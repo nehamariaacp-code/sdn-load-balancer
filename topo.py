@@ -25,13 +25,21 @@ def run_topology():
     h3 = net.addHost('h3', ip='10.0.0.3/24', mac='00:00:00:00:00:03')
     h4 = net.addHost('h4', ip='10.0.0.4/24', mac='00:00:00:00:00:04')
     h5 = net.addHost('h5', ip='10.0.0.5/24', mac='00:00:00:00:00:05')
+    h6 = net.addHost('h6', ip='10.0.0.6/24', mac='00:00:00:00:00:06')
+    h7 = net.addHost('h7', ip='10.0.0.7/24', mac='00:00:00:00:00:07')
+    h8 = net.addHost('h8', ip='10.0.0.8/24', mac='00:00:00:00:00:08')
+    h9 = net.addHost('h9', ip='10.0.0.9/24', mac='00:00:00:00:00:09')
 
-    info('*** Adding Links (port mapping: 1->h1, 2->h2, 3->h3, 4->h4, 5->h5)\n')
+    info('*** Adding Links (ports 1-2: clients h1-h2, ports 3-5: servers h3-h5, ports 6-9: clients h6-h9)\n')
     net.addLink(h1, s1, port2=1)
     net.addLink(h2, s1, port2=2)
     net.addLink(h3, s1, port2=3)
     net.addLink(h4, s1, port2=4)
     net.addLink(h5, s1, port2=5)
+    net.addLink(h6, s1, port2=6)
+    net.addLink(h7, s1, port2=7)
+    net.addLink(h8, s1, port2=8)
+    net.addLink(h9, s1, port2=9)
 
     info('*** Starting Network\n')
     net.build()
@@ -39,7 +47,7 @@ def run_topology():
     s1.start([c0])
 
     info('*** Configuring Static ARP Tables and Disabling Checksum Offloading\n')
-    hosts = [h1, h2, h3, h4, h5]
+    hosts = [h1, h2, h3, h4, h5, h6, h7, h8, h9]
     vip = '10.0.0.100'
     vmac = '00:00:00:00:01:00'
 
